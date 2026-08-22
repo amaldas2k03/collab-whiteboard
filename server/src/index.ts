@@ -14,7 +14,9 @@ import { RoomManager, Room } from './room.js';
 import { parseMessage } from '@shared/protocol';
 import type { Presence, ServerMessage } from '@shared/protocol';
 
-const PORT = Number(process.env.PORT) || 8080;
+// WS_PORT wins locally (set in the dev script) so the server never collides
+// with the Vite dev client; PORT is used by hosts like Render in production.
+const PORT = Number(process.env.WS_PORT || process.env.PORT) || 8080;
 
 const manager = new RoomManager();
 const wss = new WebSocketServer({ port: PORT });
