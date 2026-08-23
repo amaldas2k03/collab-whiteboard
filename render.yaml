@@ -1,0 +1,15 @@
+# Render Blueprint for the WebSocket server.
+# Deploy via https://render.com → New → Blueprint, pointed at this repo.
+# The frontend is deployed separately on Vercel (see client/vercel.json).
+services:
+  - type: web
+    name: collab-whiteboard-server
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "20"

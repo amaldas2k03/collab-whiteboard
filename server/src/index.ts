@@ -9,7 +9,7 @@
  */
 
 import { WebSocketServer, WebSocket } from 'ws';
-import { IncomingMessage } from 'node:http';
+import http, { IncomingMessage } from 'node:http';
 import { RoomManager, Room } from './room.js';
 import { parseMessage } from '@shared/protocol';
 import type { Presence, ServerMessage } from '@shared/protocol';
@@ -19,9 +19,25 @@ import type { Presence, ServerMessage } from '@shared/protocol';
 const PORT = Number(process.env.WS_PORT || process.env.PORT) || 8080;
 
 const manager = new RoomManager();
-const wss = new WebSocketServer({ port: PORT });
 
-console.log(`[whiteboard] WebSocket server listening on ws://localhost:${PORT}`);
+// A plain HTTP server so hosting platforms (Render/Railway) get a 200 on their
+// health-check probe. The WebSocket server shares this same HTTP server, so
+// both HTTP and ws traffic arrive on the one $PORT the host assigns us.
+const httpServer = http.createServer((req, res) => {
+  if (req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('collab-whiteboard server ok\n');
+    return;
+  }
+  res.writeHead(404);
+  res.end();
+});
+
+const wss = new WebSocketServer({ server: httpServer });
+
+httpServer.listen(PORT, () => {
+  console.log(`[whiteboard] WebSocket server listening on ws://localhost:${PORT}`);
+});
 
 /** Pull room + clientId out of the connection URL query string. */
 function parseConnParams(req: IncomingMessage): { room: string; clientId: string } {
