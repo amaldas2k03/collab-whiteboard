@@ -16,8 +16,22 @@ import type { BoardStore } from './store';
 
 export type ConnStatus = 'connecting' | 'open' | 'closed';
 
-const WS_BASE =
-  import.meta.env.VITE_WS_URL ?? 'ws://localhost:8080';
+// Production pages are served over HTTPS, where the localhost fallback is
+// blocked as mixed content. Say so loudly rather than leaving a dead board.
+function resolveWsBase(): string {
+  const configured = import.meta.env.VITE_WS_URL;
+  if (configured) return configured;
+  if (import.meta.env.PROD) {
+    console.error(
+      '[whiteboard] VITE_WS_URL is unset. Set it to your wss:// server URL in the ' +
+        'Vercel project env vars and redeploy — falling back to localhost, which ' +
+        'an HTTPS page will refuse to connect to.',
+    );
+  }
+  return 'ws://localhost:8080';
+}
+
+const WS_BASE = resolveWsBase();
 
 export interface Connection {
   close(): void;

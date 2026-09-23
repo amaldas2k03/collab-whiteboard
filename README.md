@@ -207,6 +207,66 @@ npm run dev:client   # Vite client only, on :3000
 
 ---
 
+## Deployment
+
+The two halves deploy to two different hosts, and that split is forced by the
+architecture rather than chosen: **Vercel cannot host the WebSocket server.**
+Vercel Functions are serverless and tear down per request, so they can't hold
+the long-lived `ws` connections `server/src/index.ts` depends on. The static
+client goes to Vercel; the server goes to Render, which runs a real process.
+
+### 1. Server → Render
+
+`render.yaml` at the repo root is a Blueprint. On [render.com](https://render.com):
+New → Blueprint → point it at this repo → apply. It builds with `rootDir: server`
+(the repo is cloned whole, so `../shared` resolves), runs `npm start`, and gets
+health-checked on `GET /`, which returns 200.
+
+Copy the resulting URL — e.g. `https://collab-whiteboard-server.onrender.com`.
+
+> Render's free tier sleeps after ~15 minutes idle. The first connection after a
+> lull takes ~30s to wake the instance; the client's reconnect backoff rides it out.
+
+### 2. Client → Vercel
+
+`vercel.json` lives at the **repo root**, not in `client/`. This is deliberate:
+the client imports `@shared/*` from `../shared`, so the build needs the whole
+repo. Leave Vercel's **Root Directory** at the repo root — if you set it to
+`client/`, `shared/` won't be uploaded and the build fails on an unresolved import.
+
+The config pins what Vercel runs:
+
+```json
+{
+  "buildCommand": "npm run build --workspace client",
+  "outputDirectory": "client/dist"
+}
+```
+
+Then set the environment variable in the Vercel project (Settings → Environment
+Variables), swapping in your Render URL:
+
+| Var | Value |
+| --- | ----- |
+| `VITE_WS_URL` | `wss://collab-whiteboard-server.onrender.com` |
+
+Note `wss://`, not `ws://` — the Vercel page is served over HTTPS and the browser
+refuses plaintext WebSockets from a secure origin as mixed content.
+
+`VITE_*` vars are inlined at build time, not read at runtime, so **you must
+redeploy after adding or changing it**. If it's missing, the client falls back to
+`ws://localhost:8080` and logs an error to the browser console explaining why the
+board is dead.
+
+### Verifying a deploy
+
+1. Open the Vercel URL — it should mint a room code into `?room=`.
+2. Check the connection pill in the top bar reads connected, not reconnecting.
+3. Open the same share link in a second browser and confirm cursors and shapes
+   cross over.
+
+---
+
 ## Features
 
 **Core (done):**
