@@ -5,6 +5,9 @@
   --text: #1e1e1e;
   --muted: #6b7280;
   --accent: #4f46e5;
+  --accent-soft: #eef2ff;
+  --danger: #dc2626;
+  --shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
@@ -22,6 +25,8 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
+  /* The board handles its own panning; never bounce the page behind it. */
+  overscroll-behavior: none;
 }
 
 .app {
@@ -88,6 +93,21 @@ body {
   color: var(--accent);
 }
 
+.ghost-btn {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ghost-btn.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .presence {
   margin-left: auto;
   display: flex;
@@ -143,6 +163,7 @@ body {
   min-height: 0;
 }
 
+/* ---- tool rail ---- */
 .toolbar {
   width: 56px;
   background: var(--panel);
@@ -150,24 +171,34 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   padding: 10px 0;
   flex-shrink: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+/* Lets the per-tool wrapper emit its separator as a sibling of the button. */
+.toolbar-item {
+  display: contents;
 }
 .tool-btn {
+  position: relative;
   width: 40px;
   height: 40px;
   border: 1px solid transparent;
   background: transparent;
-  border-radius: 8px;
+  border-radius: 9px;
   cursor: pointer;
-  font-size: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text);
+  flex-shrink: 0;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
-.tool-btn:hover {
+.tool-btn:hover:not(:disabled) {
   background: var(--bg);
 }
 .tool-btn.active {
@@ -176,23 +207,415 @@ body {
 }
 .tool-btn.danger:hover:not(:disabled) {
   background: #fee2e2;
+  color: var(--danger);
 }
 .tool-btn:disabled {
-  opacity: 0.35;
+  opacity: 0.3;
   cursor: not-allowed;
 }
+.tool-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* The shortcut letter, tucked into the corner and only shown on hover. */
+.tool-key {
+  position: absolute;
+  right: 3px;
+  bottom: 1px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.tool-btn:hover .tool-key {
+  opacity: 1;
+}
+.tool-btn.active .tool-key {
+  color: rgba(255, 255, 255, 0.75);
+  opacity: 1;
+}
 .toolbar-sep {
-  width: 30px;
+  width: 28px;
   height: 1px;
   background: var(--border);
   margin: 4px 0;
+  flex-shrink: 0;
+}
+.toolbar-spacer {
+  flex: 1;
+  min-height: 12px;
 }
 
+/* ---- style panel ---- */
+.style-panel {
+  width: 188px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding: 14px 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+}
+.style-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.style-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+}
+.style-value {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+.swatch {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  cursor: pointer;
+  padding: 0;
+}
+.swatch:hover {
+  transform: scale(1.08);
+}
+.swatch.active {
+  box-shadow:
+    0 0 0 2px var(--panel),
+    0 0 0 4px var(--accent);
+}
+/* "No fill" reads as a diagonal slash over a white tile. */
+.swatch-none {
+  background:
+    linear-gradient(
+      to top right,
+      transparent calc(50% - 1px),
+      var(--danger) calc(50% - 1px),
+      var(--danger) calc(50% + 1px),
+      transparent calc(50% + 1px)
+    ),
+    #fff;
+}
+.swatch-custom {
+  display: block;
+  overflow: hidden;
+  border-style: dashed;
+}
+.swatch-custom input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+  border: none;
+  padding: 0;
+}
+
+.weights {
+  display: flex;
+  gap: 6px;
+}
+.weight {
+  flex: 1;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+.weight:hover {
+  border-color: var(--accent);
+}
+.weight.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.weight-bar {
+  display: block;
+  width: 100%;
+  border-radius: 999px;
+  min-height: 1px;
+}
+/* The dashed preview tiles a gradient supplied inline in the stroke color. */
+.weight-bar.dashed {
+  border-radius: 0;
+  background-size: 10px 100%;
+  background-repeat: repeat-x;
+}
+
+.slider {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+/* ---- canvas ---- */
 .canvas-container {
+  position: relative;
   flex: 1;
   min-width: 0;
-  background:
-    linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px) 0 0 / 24px 24px,
-    linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px) 0 0 / 24px 24px;
+  background-color: var(--bg);
   overflow: hidden;
+  touch-action: none;
+}
+/*
+ * The grid is painted by CSS rather than Konva so panning and zooming cost
+ * nothing: Canvas feeds the live viewport in as custom properties.
+ */
+.canvas-container.with-grid {
+  background-image:
+    linear-gradient(90deg, rgba(15, 23, 42, 0.05) 1px, transparent 1px),
+    linear-gradient(rgba(15, 23, 42, 0.05) 1px, transparent 1px);
+  background-size: var(--grid-size) var(--grid-size);
+  background-position: var(--grid-x) var(--grid-y);
+}
+.canvas-container.with-grid-major {
+  background-image:
+    linear-gradient(90deg, rgba(15, 23, 42, 0.09) 1px, transparent 1px),
+    linear-gradient(rgba(15, 23, 42, 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.05) 1px, transparent 1px),
+    linear-gradient(rgba(15, 23, 42, 0.05) 1px, transparent 1px);
+  background-size:
+    var(--grid-major) var(--grid-major),
+    var(--grid-major) var(--grid-major),
+    var(--grid-size) var(--grid-size),
+    var(--grid-size) var(--grid-size);
+  background-position: var(--grid-x) var(--grid-y);
+}
+
+/*
+ * Spotlight: the bright rectangle is the element itself, and an enormous
+ * spread shadow dims everything around it. The container clips the overflow.
+ */
+.spotlight {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  border-radius: 8px;
+  box-shadow:
+    0 0 0 100vmax rgba(15, 23, 42, 0.55),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.7);
+}
+
+.focus-banner {
+  position: absolute;
+  z-index: 6;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.86);
+  color: #fff;
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.eraser-brush {
+  position: absolute;
+  z-index: 4;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1.5px solid rgba(15, 23, 42, 0.55);
+  background: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+}
+
+.text-editor {
+  position: absolute;
+  z-index: 5;
+  margin: 0;
+  border: none;
+  border-radius: 4px;
+  outline: 2px solid var(--accent);
+  resize: none;
+  overflow: hidden;
+  font-family: inherit;
+  font-weight: inherit;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.18);
+  min-height: 1.4em;
+}
+.text-editor.as-note {
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.22);
+}
+
+/* ---- viewport HUD ---- */
+.hud {
+  position: absolute;
+  z-index: 6;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.hud-btn,
+.hud-zoom {
+  border: none;
+  background: transparent;
+  border-radius: 7px;
+  cursor: pointer;
+  height: 28px;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 8px;
+  min-width: 28px;
+}
+.hud-zoom {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  min-width: 48px;
+}
+.hud-btn.wide {
+  font-size: 12px;
+}
+.hud-btn:hover,
+.hud-zoom:hover {
+  background: var(--bg);
+  color: var(--accent);
+}
+.hud-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  margin: 0 3px;
+}
+
+/* ---- shortcuts dialog ---- */
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.modal {
+  background: var(--panel);
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.3);
+  width: min(880px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-head h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.modal-close {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+}
+.modal-close:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px 32px;
+}
+.modal-body h3 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.modal-body section + section,
+.modal-body dl + h3 {
+  margin-top: 4px;
+}
+.modal-body dl {
+  margin: 0 0 16px;
+}
+.shortcut-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 0;
+}
+.shortcut-row dt {
+  flex-shrink: 0;
+  width: 132px;
+  text-align: right;
+}
+.shortcut-row dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+kbd {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 2px 6px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ---- narrow screens: the style panel folds away ---- */
+@media (max-width: 760px) {
+  .style-panel {
+    display: none;
+  }
+  .topbar {
+    gap: 12px;
+  }
+  .room-label {
+    display: none;
+  }
 }

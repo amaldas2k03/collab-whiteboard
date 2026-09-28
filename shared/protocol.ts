@@ -16,7 +16,25 @@
 // Shapes (the board's persistent state)
 // ---------------------------------------------------------------------------
 
-export type ShapeType = 'rect' | 'ellipse' | 'line' | 'pen' | 'text';
+export type ShapeType =
+  /** axis-aligned box */
+  | 'rect'
+  /** ellipse inscribed in the box */
+  | 'ellipse'
+  /** straight segment */
+  | 'line'
+  /** straight segment with an arrowhead at the far end */
+  | 'arrow'
+  /** quadratic curve: points are [x0,y0, cx,cy, x1,y1] */
+  | 'curve'
+  /** freehand stroke */
+  | 'pen'
+  /** freehand stroke drawn wide + translucent, multiplied over what it covers */
+  | 'highlight'
+  /** free-floating label */
+  | 'text'
+  /** sticky note: a filled box with wrapped text inside */
+  | 'note';
 
 /** Logical version stamp used by the merge module to order concurrent edits. */
 export interface Version {
@@ -30,6 +48,15 @@ export interface ShapeStyle {
   stroke: string;
   fill: string;
   strokeWidth: number;
+  /**
+   * Whole-shape alpha, 0..1. Optional so a client running an older build still
+   * parses shapes produced here — readers must treat `undefined` as 1.
+   */
+  opacity?: number;
+  /** text / note only. Readers treat `undefined` as the per-type default. */
+  fontSize?: number;
+  /** render the stroke dashed */
+  dash?: boolean;
 }
 
 /**
@@ -49,6 +76,13 @@ export interface Shape {
   points?: number[];
   /** text box */
   text?: string;
+  /**
+   * Stacking order, ascending — lower draws first. Optional for the same
+   * wire-compat reason as `style.opacity`; readers treat `undefined` as 0.
+   */
+  z?: number;
+  /** Rotation in degrees, clockwise, about the shape's own origin. */
+  rotation?: number;
   style: ShapeStyle;
   version: Version;
   deleted: boolean;
@@ -56,7 +90,10 @@ export interface Shape {
 
 /** Partial shape patch sent on update — only the fields that changed. */
 export type ShapeChanges = Partial<
-  Pick<Shape, 'x' | 'y' | 'width' | 'height' | 'points' | 'text' | 'style'>
+  Pick<
+    Shape,
+    'x' | 'y' | 'width' | 'height' | 'points' | 'text' | 'style' | 'z' | 'rotation'
+  >
 >;
 
 // ---------------------------------------------------------------------------
