@@ -82,15 +82,17 @@ wss.on('connection', (socket: WebSocket, req: IncomingMessage) => {
     room.broadcast(out, clientId);
   });
 
-  const onGone = () => handleDisconnect(room, clientId);
+  const onGone = () => handleDisconnect(room, clientId, socket);
   socket.on('close', onGone);
   socket.on('error', onGone);
 });
 
 /** Remove a client and notify the room, dropping the room if it's now empty. */
-function handleDisconnect(room: Room, clientId: string): void {
-  const removed = room.removeClient(clientId);
-  if (!removed) return; // already handled (close + error can both fire)
+function handleDisconnect(room: Room, clientId: string, socket: WebSocket): void {
+  // Passing the socket keeps a superseded connection's close from evicting the
+  // live one — see Room.removeClient.
+  const removed = room.removeClient(clientId, socket);
+  if (!removed) return; // already handled, or a stale socket closing late
 
   console.log(`[whiteboard] ${clientId} left room "${room.id}" (now ${room.clientCount})`);
   room.broadcast({
