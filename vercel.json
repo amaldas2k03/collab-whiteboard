@@ -3,6 +3,11 @@
   "framework": "vite",
   "installCommand": "npm install",
   "buildCommand": "npm run build --workspace client",
-  "outputDirectory": "client/dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
 }

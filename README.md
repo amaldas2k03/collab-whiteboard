@@ -239,9 +239,16 @@ The config pins what Vercel runs:
 ```json
 {
   "buildCommand": "npm run build --workspace client",
-  "outputDirectory": "client/dist"
+  "outputDirectory": "dist"
 }
 ```
+
+Vite is configured (`client/vite.config.ts`) to emit to the **repo-root** `dist/`
+rather than `client/dist/`. Vercel resolves its output directory from the repo
+root, and a project-level override pinned to `dist` can survive in the dashboard
+where it is awkward to clear; emitting there keeps the built path identical to
+what the host looks for under either setting. Symptom if they disagree:
+`No Output Directory named "dist" found` *after* a build that otherwise succeeded.
 
 Then set the environment variable in the Vercel project (Settings → Environment
 Variables), swapping in your Render URL:
