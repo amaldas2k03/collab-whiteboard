@@ -54,10 +54,22 @@ export class Room {
     this.clients.set(client.clientId, client);
   }
 
-  removeClient(clientId: string): Presence | undefined {
+  /**
+   * Unregister a client.
+   *
+   * `socket` matters: a reconnecting client (or React StrictMode's double
+   * mount in dev) can register a NEW socket under the same clientId before the
+   * old socket's close event arrives. Letting that late close unregister the
+   * entry would orphan the live connection — the peer stays connected but the
+   * room no longer knows about it, so nothing is ever broadcast to it. Only
+   * the socket that is currently registered may remove the client.
+   */
+  removeClient(clientId: string, socket?: WebSocket): Presence | undefined {
     const client = this.clients.get(clientId);
+    if (!client) return undefined;
+    if (socket && client.socket !== socket) return undefined;
     this.clients.delete(clientId);
-    return client?.presence;
+    return client.presence;
   }
 
   /** Snapshot for the initial sync:full — the only time we send full state. */

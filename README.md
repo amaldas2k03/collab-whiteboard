@@ -43,8 +43,9 @@ collab-whiteboard/
 │       └── room.ts  #   Room (authoritative state) + RoomManager
 └── client/          # React + Konva SPA
     └── src/
-        ├── lib/     #   store (client replica), connection, identity, tools
-        └── components/  # Canvas, Toolbar
+        ├── lib/     #   store (client replica + undo history), connection,
+        │            #   identity, tools/palettes, geometry, draft shapes
+        └── components/  # Canvas, Toolbar, StylePanel, ShapeNode, Shortcuts, Icon
 ```
 
 `shared/` is imported by both the client and the server via the `@shared/*`
@@ -166,6 +167,11 @@ All messages share an envelope and are discriminated on `type`:
 | `shape:delete`    | C → S → C | `{ id, version }`                         | Tombstone stamp                    |
 | `cursor:move`     | C → S → C | `{ clientId, x, y }`                      | Ephemeral, throttled, never merged |
 
+`Shape` gained `z` (stacking order), `rotation`, and `style.opacity` /
+`style.fontSize` / `style.dash` as the toolset grew. All are **optional** on the
+wire so a client running an older build still parses shapes produced by a newer
+one; readers substitute the documented defaults (`z → 0`, `opacity → 1`).
+
 Full definitions: [`shared/protocol.ts`](shared/protocol.ts).
 
 ---
@@ -276,20 +282,57 @@ board is dead.
 
 ## Features
 
-**Core (done):**
-- Shapes: rectangle, ellipse, straight line, freehand pen, text box
-- Select, move, resize (rect/ellipse), delete
+**Drawing**
+- Shapes: rectangle, ellipse, line, arrow, quadratic curve, freehand pen,
+  highlighter, text box, sticky note
+- Curves expose a draggable control point, so you bend them after drawing
+- The highlighter multiplies over what it covers, so overlapping strokes darken
+  like a real marker instead of stacking flat alpha
+- Hold **Shift** while dragging for square boxes and 45° lines
+- Text and notes are typed **in place** on the canvas, not through a prompt
+
+**Editing**
+- Select, move, rotate and resize *every* shape type — resizing a freehand
+  stroke or an arrow scales its points, it doesn't just stretch a bounding box
+- Eraser that deletes by brush contact (one drag = one undo step)
+- Paint bucket: click a shape to recolor it; on a stroke it recolors the ink
+- Stroke color, fill color, stroke weight, solid/dashed and opacity, applied to
+  the next shape and to the current selection at once
+- Stacking order (bring to front / send to back), duplicate, clear board
+- **Undo / redo**, with drags coalesced into single steps
+
+**Canvas**
+- Effectively unbounded board: pan with the wheel, the hand tool, or space-drag
+- Zoom 5%–800% around the pointer (Ctrl/⌘ + wheel or pinch), plus zoom-to-fit
+- Grid that rescales with the zoom and drops tiers as they stop being legible
+- **Spotlight/focus mode**: drag a region to dim everything else while you talk
+  through it
+- Export the whole board as a PNG — including whatever is scrolled off-screen
+
+**Collaboration**
 - Room-based sessions via shareable link (no auth)
-- Live cursors with name + color labels
+- Live cursors with name + color labels, in board coordinates so two people at
+  different zoom levels point at the same thing
 - New clients receive full state on join, deltas thereafter
 - Deterministic conflict resolution (above)
 
+Press <kbd>?</kbd> in the app for the full keyboard map.
+
 **Not yet implemented (scoped out / stretch):**
-- Undo/redo
 - Persistence (board is in-memory; empties when the last person leaves)
-- Styling controls (colors/stroke width) beyond per-shape defaults
 - Offline edit + reconnect merge
-- PNG/SVG export
+- Multi-select / grouping
+- SVG export
+
+### A note on undo and the CRDT
+
+Undo is **not** a rollback. Each undo step is applied as a brand-new edit with a
+brand-new Lamport stamp, using the same `shape:create` / `shape:update` /
+`shape:delete` messages as any other change — so the CRDT's single rule (newest
+logical write wins) stays intact. Undoing a delete re-creates the shape with a
+version that out-votes the tombstone. The practical consequence is the correct
+one: your undo never silently reverts a collaborator's newer edit to the same
+shape, because theirs is what the merge keeps.
 
 ---
 
@@ -299,6 +342,13 @@ board is dead.
   keep the message contract explicit and inspectable.
 - **Konva for canvas** — gives shape hit-testing, dragging, and a resize
   transformer without hand-rolling canvas math.
+- **Own geometry for the eraser and bucket** ([`client/src/lib/geometry.ts`](client/src/lib/geometry.ts))
+  — Konva's hit graph answers "what is under this pixel", but the eraser needs
+  "what is within *r* of this point" and wants an unfilled outline to be
+  erasable only along its stroke. That is a distance question, so it's computed
+  against the shapes' own geometry.
+- **The grid is CSS, not Konva** — it's two repeating gradients fed the live
+  viewport as custom properties, so panning and zooming never redraw the scene.
 - **In-memory state** — the scope is real-time collaboration and conflict
   resolution, not durability. Swapping in Redis/Postgres would be additive.
 - **Shared `merge.ts` on both sides** — makes the client a true CRDT replica and
