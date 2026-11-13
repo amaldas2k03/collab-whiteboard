@@ -34,7 +34,10 @@ export type IconName =
   | 'minus'
   | 'fit'
   | 'help'
-  | 'close';
+  | 'close'
+  | 'camera'
+  | 'lock'
+  | 'unlock';
 
 /** Path data only — the wrapper below supplies the shared stroke attributes. */
 const PATHS: Record<IconName, JSX.Element> = {
@@ -177,6 +180,24 @@ const PATHS: Record<IconName, JSX.Element> = {
     </>
   ),
   close: <path d="M6 6l12 12M18 6 6 18" />,
+  camera: (
+    <>
+      <path d="M4 8h3l2-3h6l2 3h3v11H4z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </>
+  ),
+  lock: (
+    <>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </>
+  ),
+  unlock: (
+    <>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 7.5-2" />
+    </>
+  ),
 };
 
 interface Props {

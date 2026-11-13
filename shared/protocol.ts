@@ -34,7 +34,13 @@ export type ShapeType =
   /** free-floating label */
   | 'text'
   /** sticky note: a filled box with wrapped text inside */
-  | 'note';
+  | 'note'
+  /** rhombus inscribed in the box */
+  | 'diamond'
+  /** LaTeX in `text`, typeset into the box */
+  | 'math'
+  /** bitmap from `src` (an imported photo), stretched to the box */
+  | 'image';
 
 /** Logical version stamp used by the merge module to order concurrent edits. */
 export interface Version {
@@ -83,6 +89,18 @@ export interface Shape {
   z?: number;
   /** Rotation in degrees, clockwise, about the shape's own origin. */
   rotation?: number;
+  /** image only: a data: URL. */
+  src?: string;
+  /** Pinned in place: not draggable, resizable or erasable until unlocked. */
+  locked?: boolean;
+  /**
+   * arrow only: ids of the shapes it connects. When both are live, readers
+   * draw the arrow between them instead of from `points`, so it follows them.
+   */
+  from?: string;
+  to?: string;
+  /** Id of another shape this one refers to; rendered as a jump link. */
+  link?: string;
   style: ShapeStyle;
   version: Version;
   deleted: boolean;
@@ -92,7 +110,16 @@ export interface Shape {
 export type ShapeChanges = Partial<
   Pick<
     Shape,
-    'x' | 'y' | 'width' | 'height' | 'points' | 'text' | 'style' | 'z' | 'rotation'
+    | 'x'
+    | 'y'
+    | 'width'
+    | 'height'
+    | 'points'
+    | 'text'
+    | 'style'
+    | 'z'
+    | 'rotation'
+    | 'locked'
   >
 >;
 

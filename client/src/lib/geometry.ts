@@ -13,6 +13,7 @@
  */
 
 import type { Shape, ShapeType } from '@shared/protocol';
+import { connectorPoints } from '@shared/photoImport';
 
 export interface Box {
   x: number;
@@ -34,9 +35,9 @@ export function isPointShape(type: ShapeType): boolean {
   return POINT_SHAPES.has(type);
 }
 
-/** Shapes whose text the user can edit in place. */
+/** Shapes whose text the user can edit in place (math edits its LaTeX). */
 export function isTextShape(type: ShapeType): boolean {
-  return type === 'text' || type === 'note';
+  return type === 'text' || type === 'note' || type === 'math';
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +159,25 @@ export function worldBounds(shape: Shape): Box {
   };
 }
 
+/**
+ * An arrow attached to two live shapes is drawn between their current boxes,
+ * so it follows them when either moves. Derived on read, never written back:
+ * peers compute the same result from the same synced positions.
+ */
+export function resolveConnector(shape: Shape, byId: Map<string, Shape>): Shape {
+  if (shape.type !== 'arrow' || !shape.from || !shape.to) return shape;
+  const a = byId.get(shape.from);
+  const b = byId.get(shape.to);
+  if (!a || !b) return shape; // an end was deleted: fall back to the stored points
+  return {
+    ...shape,
+    x: 0,
+    y: 0,
+    rotation: 0,
+    points: connectorPoints(worldBounds(a), worldBounds(b)),
+  };
+}
+
 /** Union of every shape's world box, or null when the board is empty. */
 export function contentBounds(shapes: Shape[]): Box | null {
   if (shapes.length === 0) return null;
@@ -273,7 +293,7 @@ export function distanceToShape(
   if (outside > 0) return outside;
   // Inside: filled shapes (and anything carrying text) are solid; hollow
   // outlines are only "hit" near their edge.
-  if (solid || hasFill(shape) || isTextShape(shape.type)) return 0;
+  if (solid || hasFill(shape) || isTextShape(shape.type) || shape.type === 'image') return 0;
   return Math.min(lx - b.x, b.x + b.width - lx, ly - b.y, b.y + b.height - ly);
 }
 

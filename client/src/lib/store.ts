@@ -284,6 +284,19 @@ export class BoardStore {
   }
 
   /**
+   * Create several shapes as ONE undo step (used by photo import). Each is a
+   * normal `shape:create` with its own Lamport stamp; stacking follows the
+   * array order, all above what is already on the board.
+   */
+  createShapes(bases: NewShape[]): Shape[] {
+    const z = this.maxZ;
+    const shapes = bases.map((base, i) => this.putShape({ ...base, z: z + 1 + i }));
+    this.record(shapes.map((shape) => ({ kind: 'create', shape })));
+    this.emit();
+    return shapes;
+  }
+
+  /**
    * Patch a shape.
    *
    * @param coalesceKey pass a stable key (e.g. `drag:<id>`) to fold a stream of

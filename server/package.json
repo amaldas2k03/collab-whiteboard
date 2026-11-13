@@ -6,15 +6,17 @@
   "scripts": {
     "dev": "cross-env WS_PORT=8080 tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test src/photoImport.test.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
     "tsx": "^4.19.2",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@types/ws": "^8.5.13",
     "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
     "cross-env": "^7.0.3",
     "typescript": "^5.7.2"
   }

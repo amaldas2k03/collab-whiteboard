@@ -32,6 +32,8 @@ function resolveWsBase(): string {
 }
 
 const WS_BASE = resolveWsBase();
+/** Same server over HTTP(S), for the REST routes (ws -> http, wss -> https). */
+export const HTTP_BASE = WS_BASE.replace(/^ws/, 'http');
 
 export interface Connection {
   close(): void;

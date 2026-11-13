@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { TOOLS, type Tool } from '../lib/tools';
 import { Icon, type IconName } from './Icon';
 
@@ -5,6 +6,11 @@ interface Props {
   tool: Tool;
   onToolChange: (t: Tool) => void;
   hasSelection: boolean;
+  /** Lock state of the selection; meaningless without one. */
+  selectionLocked: boolean;
+  onToggleLock: () => void;
+  importing: boolean;
+  onImportPhoto: (file: File) => void;
   onDelete: () => void;
   onDuplicate: () => void;
   onBringToFront: () => void;
@@ -22,6 +28,10 @@ export function Toolbar({
   tool,
   onToolChange,
   hasSelection,
+  selectionLocked,
+  onToggleLock,
+  importing,
+  onImportPhoto,
   onDelete,
   onDuplicate,
   onBringToFront,
@@ -34,6 +44,7 @@ export function Toolbar({
   onClear,
   onHelp,
 }: Props) {
+  const fileRef = useRef<HTMLInputElement>(null);
   return (
     <nav className="toolbar" aria-label="Tools">
       {TOOLS.map((t, i) => {
@@ -54,6 +65,32 @@ export function Toolbar({
           </div>
         );
       })}
+
+      <div className="toolbar-sep" />
+
+      <button
+        className="tool-btn"
+        title="Import a photo of a whiteboard or notes"
+        aria-label="Import photo"
+        disabled={importing}
+        aria-busy={importing}
+        onClick={() => fileRef.current?.click()}
+      >
+        <Icon name="camera" />
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          // Reset so picking the same photo again still fires a change.
+          e.target.value = '';
+          if (file) onImportPhoto(file);
+        }}
+      />
 
       <div className="toolbar-sep" />
 
@@ -106,10 +143,20 @@ export function Toolbar({
         <Icon name="back" />
       </button>
       <button
+        className={`tool-btn ${hasSelection && selectionLocked ? 'active' : ''}`}
+        title={selectionLocked ? 'Unlock selected' : 'Lock selected in place'}
+        aria-label={selectionLocked ? 'Unlock selected' : 'Lock selected'}
+        aria-pressed={hasSelection && selectionLocked}
+        disabled={!hasSelection}
+        onClick={onToggleLock}
+      >
+        <Icon name={selectionLocked ? 'lock' : 'unlock'} />
+      </button>
+      <button
         className="tool-btn danger"
         title="Delete selected — Del"
         aria-label="Delete selected"
-        disabled={!hasSelection}
+        disabled={!hasSelection || selectionLocked}
         onClick={onDelete}
       >
         <Icon name="trash" />

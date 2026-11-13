@@ -11,6 +11,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import http, { IncomingMessage } from 'node:http';
 import { RoomManager, Room } from './room.js';
+import { handleImportPhoto, IMPORT_PATH } from './importPhoto.js';
 import { parseMessage } from '@shared/protocol';
 import type { Presence, ServerMessage } from '@shared/protocol';
 
@@ -24,6 +25,10 @@ const manager = new RoomManager();
 // health-check probe. The WebSocket server shares this same HTTP server, so
 // both HTTP and ws traffic arrive on the one $PORT the host assigns us.
 const httpServer = http.createServer((req, res) => {
+  if (req.url?.split('?')[0] === IMPORT_PATH) {
+    void handleImportPhoto(req, res);
+    return;
+  }
   if (req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('collab-whiteboard server ok\n');

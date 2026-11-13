@@ -174,6 +174,12 @@ one; readers substitute the documented defaults (`z → 0`, `opacity → 1`).
 
 Full definitions: [`shared/protocol.ts`](shared/protocol.ts).
 
+Photo import added **no** WebSocket message types. It adds one HTTP route,
+`POST /api/import-photo` (raw image bytes in, a validated `PhotoImport` out),
+and a few optional `Shape` fields: types `diamond`, `math` (LaTeX in `text`) and
+`image` (`src`), plus `locked`, `from`/`to` (an arrow pinned to two shapes) and
+`link` (a jump target).
+
 ---
 
 ## Running locally
@@ -210,6 +216,10 @@ npm run dev:client   # Vite client only, on :3000
 | `VITE_WS_URL` | client | `ws://localhost:8080`   | WebSocket server URL the client connects to    |
 | `WS_PORT`     | server | `8080`                  | Port the ws server binds to (used in dev)      |
 | `PORT`        | server | falls back to `WS_PORT` | Provided by hosts (Render/Railway) in prod     |
+| `ANTHROPIC_API_KEY` | server | unset | Enables photo import. Server-only; never shipped to the client |
+| `VISION_PROVIDER` | server | `anthropic` | Which adapter in `server/src/vision.ts` to use |
+| `VISION_MODEL` | server | `claude-opus-5` | Model the adapter calls |
+| `CORS_ORIGIN` | server | `*` | Origin allowed to call `/api/import-photo` |
 
 ---
 
@@ -315,6 +325,20 @@ board is dead.
   different zoom levels point at the same thing
 - New clients receive full state on join, deltas thereafter
 - Deterministic conflict resolution (above)
+
+**Photo → living notes**
+- The camera button uploads (or, on a phone, snaps) a photo of a whiteboard or
+  handwritten page. The browser shrinks it to ~2000px; the server sends it to a
+  vision model and validates the JSON it returns against
+  [`shared/photoImport.ts`](shared/photoImport.ts), retrying once if it's malformed
+- Handwriting becomes editable text, formulas become KaTeX-typeset math
+  (double-click to edit the LaTeX), boxes/circles/diamonds become shapes, and
+  arrows stay attached to the shapes they connect when you move them
+- Notes that refer to each other get a ↗ badge that pans to the target
+- The original photo sits underneath, faded and locked, for comparison; select
+  it and use the lock button to move or remove it
+- Everything arrives as ordinary `shape:create` ops, so collaborators see it
+  live, and the whole import is a single undo step
 
 Press <kbd>?</kbd> in the app for the full keyboard map.
 

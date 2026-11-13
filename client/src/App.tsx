@@ -29,6 +29,8 @@ import { StylePanel } from './components/StylePanel';
 import { Shortcuts } from './components/Shortcuts';
 import { Canvas, type CanvasApi } from './components/Canvas';
 import { TOOLS, INITIAL_DRAW_STYLE, type DrawStyle, type Tool } from './lib/tools';
+import { isEmptyImport, preparePhoto, requestImport } from './lib/photoImport';
+import { photoImportToShapes } from '@shared/photoImport';
 
 /** Read ?room= from the URL, or mint a short code and put it in the URL. */
 function useRoomId(): string {
@@ -69,6 +71,8 @@ export function App() {
   const [showGrid, setShowGrid] = useState(true);
   const [showHelp, setShowHelp] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const canvasApi = useRef<CanvasApi | null>(null);
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
@@ -92,10 +96,10 @@ export function App() {
   }, [selectedId, selected]);
 
   const deleteSelection = useCallback(() => {
-    if (!selectedId) return;
+    if (!selectedId || selected?.locked) return;
     store.deleteShape(selectedId);
     setSelectedId(null);
-  }, [selectedId, store]);
+  }, [selectedId, selected, store]);
 
   const duplicateSelection = useCallback(() => {
     if (!selectedId) return;
@@ -112,6 +116,45 @@ export function App() {
     store.clearBoard();
     setSelectedId(null);
   }, [snapshot.shapes.length, store]);
+
+  /**
+   * Photo -> living notes. Everything the model found lands as ordinary shapes
+   * over a faded copy of the photo, centred in the current view, created as
+   * one undo step through the normal ops so peers see it arrive live.
+   */
+  const importPhoto = useCallback(
+    async (file: File) => {
+      setImportError(null);
+      setImporting(true);
+      try {
+        const photo = await preparePhoto(file);
+        const data = await requestImport(photo.blob);
+        if (isEmptyImport(data)) {
+          setImportError('No notes or diagrams were found in that photo.');
+          return;
+        }
+        const view = canvasApi.current?.visibleWorld() ?? { x: 0, y: 0, width: 1200, height: 800 };
+        const k = Math.min((view.width * 0.8) / photo.width, (view.height * 0.8) / photo.height);
+        const width = photo.width * k;
+        const height = photo.height * k;
+        store.createShapes(
+          photoImportToShapes(
+            data,
+            { x: view.x + (view.width - width) / 2, y: view.y + (view.height - height) / 2, width, height },
+            photo.dataUrl,
+            () => crypto.randomUUID(),
+          ),
+        );
+        setSelectedId(null);
+        setTool('select');
+      } catch (err) {
+        setImportError((err as Error).message);
+      } finally {
+        setImporting(false);
+      }
+    },
+    [store],
+  );
 
   // --- global shortcuts -----------------------------------------------------
   // Viewport keys (zoom, space-to-pan) are handled inside Canvas, which owns
@@ -224,6 +267,12 @@ export function App() {
           tool={tool}
           onToolChange={setTool}
           hasSelection={!!selected}
+          selectionLocked={!!selected?.locked}
+          onToggleLock={() =>
+            selected && store.updateShape(selected.id, { locked: !selected.locked })
+          }
+          importing={importing}
+          onImportPhoto={importPhoto}
           onDelete={deleteSelection}
           onDuplicate={duplicateSelection}
           onBringToFront={() => selectedId && store.bringToFront(selectedId)}
@@ -259,6 +308,24 @@ export function App() {
           apiRef={canvasApi}
         />
       </div>
+
+      {(importing || importError) && (
+        <div className={`toast ${importError ? 'toast-error' : ''}`} role="status" aria-live="polite">
+          {importing ? (
+            <>
+              <span className="spinner" aria-hidden="true" />
+              Reading your photo… this can take up to a minute.
+            </>
+          ) : (
+            <>
+              {importError}
+              <button className="toast-close" aria-label="Dismiss" onClick={() => setImportError(null)}>
+                ×
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {showHelp && <Shortcuts onClose={() => setShowHelp(false)} />}
     </div>

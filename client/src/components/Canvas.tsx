@@ -52,8 +52,10 @@ import {
   distanceToShape,
   isPointShape,
   isTextShape,
+  resolveConnector,
   scalePoints,
   shapeAt,
+  worldBounds,
   type Box,
 } from '../lib/geometry';
 import {
@@ -73,6 +75,8 @@ export interface CanvasApi {
   fitToContent: () => void;
   zoomBy: (factor: number) => void;
   resetZoom: () => void;
+  /** The part of the board currently on screen, in world units. */
+  visibleWorld: () => Box;
 }
 
 interface Props {
@@ -104,7 +108,7 @@ interface Editing {
   token: string;
   /** null while composing a brand-new text box. */
   id: string | null;
-  type: 'text' | 'note';
+  type: 'text' | 'note' | 'math';
   world: { x: number; y: number };
   width: number;
   height: number;
@@ -180,9 +184,16 @@ export function Canvas({
   const committedToken = useRef<string | null>(null);
   const [spaceDown, setSpaceDown] = useState(false);
 
+  // Attached arrows are re-routed between their shapes' live positions here,
+  // so drawing, hit-testing and export all see where they actually are.
+  const shapes = useMemo(() => {
+    const byId = new Map(snapshot.shapes.map((s) => [s.id, s]));
+    return snapshot.shapes.map((s) => resolveConnector(s, byId));
+  }, [snapshot.shapes]);
+
   const selected = useMemo(
-    () => snapshot.shapes.find((s) => s.id === selectedId) ?? null,
-    [snapshot.shapes, selectedId],
+    () => shapes.find((s) => s.id === selectedId) ?? null,
+    [shapes, selectedId],
   );
 
   const selectMode = tool === 'select';
@@ -221,7 +232,7 @@ export function Canvas({
   const resetZoom = useCallback(() => zoomTo(1), [zoomTo]);
 
   const fitToContent = useCallback(() => {
-    const box = contentBounds(snapshot.shapes);
+    const box = contentBounds(shapes);
     if (!box || size.width === 0) return resetZoom();
     const pad = 64;
     const scale = clamp(
@@ -238,7 +249,30 @@ export function Canvas({
       x: size.width / 2 - (box.x + box.width / 2) * scale,
       y: size.height / 2 - (box.y + box.height / 2) * scale,
     });
-  }, [snapshot.shapes, size.width, size.height, resetZoom]);
+  }, [shapes, size.width, size.height, resetZoom]);
+
+  /** Centre the view on a shape at the current zoom, and select it. */
+  const panTo = (id: string) => {
+    const target = shapes.find((s) => s.id === id);
+    if (!target) return;
+    const b = worldBounds(target);
+    setView((v) => ({
+      ...v,
+      x: size.width / 2 - (b.x + b.width / 2) * v.scale,
+      y: size.height / 2 - (b.y + b.height / 2) * v.scale,
+    }));
+    if (selectMode) onSelect(id);
+  };
+
+  const visibleWorld = useCallback(
+    (): Box => ({
+      x: -view.x / view.scale,
+      y: -view.y / view.scale,
+      width: size.width / view.scale,
+      height: size.height / view.scale,
+    }),
+    [view, size.width, size.height],
+  );
 
   const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();
@@ -257,7 +291,7 @@ export function Canvas({
   const exportPng = useCallback(() => {
     const stage = stageRef.current;
     if (!stage) return;
-    const box = contentBounds(snapshot.shapes);
+    const box = contentBounds(shapes);
     if (!box) return;
 
     const pad = 32;
@@ -288,15 +322,15 @@ export function Canvas({
     a.href = url;
     a.download = `whiteboard-${roomId}.png`;
     a.click();
-  }, [snapshot.shapes, view.x, view.y, view.scale, roomId]);
+  }, [shapes, view.x, view.y, view.scale, roomId]);
 
   // Publish the imperative API for the toolbar and the keyboard shortcuts.
   useLayoutEffect(() => {
-    apiRef.current = { exportPng, fitToContent, zoomBy, resetZoom };
+    apiRef.current = { exportPng, fitToContent, zoomBy, resetZoom, visibleWorld };
     return () => {
       apiRef.current = null;
     };
-  }, [apiRef, exportPng, fitToContent, zoomBy, resetZoom]);
+  }, [apiRef, exportPng, fitToContent, zoomBy, resetZoom, visibleWorld]);
 
   // --- keyboard: zoom, space-to-pan, escape --------------------------------
 
@@ -358,10 +392,12 @@ export function Canvas({
     if (!tr) return;
     const node = selectedId ? nodeRefs.current.get(selectedId) : undefined;
     // Everything is resizable now, but only while the select tool is active
-    // and the shape is not currently being retyped.
-    tr.nodes(node && selected && selectMode && !editing ? [node] : []);
+    // and the shape is not currently being retyped. Locked shapes and
+    // attached arrows (whose geometry is derived) are left alone.
+    const fixed = selected && (selected.locked || isAttached(selected));
+    tr.nodes(node && selected && selectMode && !editing && !fixed ? [node] : []);
     tr.getLayer()?.batchDraw();
-  }, [selectedId, selected, snapshot.shapes, selectMode, editing]);
+  }, [selectedId, selected, shapes, selectMode, editing]);
 
   // --- pointer --------------------------------------------------------------
 
@@ -371,8 +407,9 @@ export function Canvas({
 
   const eraseAt = (wx: number, wy: number) => {
     const radius = ERASER_RADIUS / view.scale;
-    const hits = snapshot.shapes.filter(
+    const hits = shapes.filter(
       (s) =>
+        !s.locked &&
         !erasedThisStroke.current.has(s.id) &&
         distanceToShape(s, wx, wy) <= radius,
     );
@@ -399,7 +436,7 @@ export function Canvas({
     setEditing({
       token: crypto.randomUUID(),
       id: shape.id,
-      type: shape.type as 'text' | 'note',
+      type: shape.type as Editing['type'],
       world: { x: shape.x, y: shape.y },
       width: shape.width ?? (shape.type === 'note' ? NOTE_SIZE.width : TEXT_WIDTH),
       height: shape.height ?? 0,
@@ -427,9 +464,10 @@ export function Canvas({
     if (current.id) {
       const existing = store.getShape(current.id);
       if (!existing) return;
-      // A text box emptied out is a deletion; an emptied sticky note keeps its
-      // card, because the card itself is the artefact people move around.
-      if (!text && current.type === 'text') store.deleteShape(current.id);
+      // A text box (or formula) emptied out is a deletion; an emptied sticky
+      // note keeps its card, because the card itself is the artefact people
+      // move around.
+      if (!text && current.type !== 'note') store.deleteShape(current.id);
       else if (text !== (existing.text ?? '')) {
         store.updateShape(current.id, { text });
       }
@@ -473,8 +511,8 @@ export function Canvas({
 
       case 'fill': {
         // `solid`: clicking inside an un-filled outline is how you fill it.
-        const hit = shapeAt(snapshot.shapes, pos.x, pos.y, 0, true);
-        if (hit) bucketFill(hit);
+        const hit = shapeAt(shapes, pos.x, pos.y, 0, true);
+        if (hit && !hit.locked) bucketFill(hit);
         return;
       }
 
@@ -743,11 +781,11 @@ export function Canvas({
 
         {/* Shapes */}
         <Layer>
-          {snapshot.shapes.map((shape) => (
+          {shapes.map((shape) => (
             <ShapeNode
               key={shape.id}
               shape={shape}
-              draggable={selectMode}
+              draggable={selectMode && !shape.locked && !isAttached(shape)}
               // Hide the original while its text is being edited in the
               // overlay, so the two don't double up on screen.
               listening={editing?.id !== shape.id}
@@ -757,6 +795,7 @@ export function Canvas({
               onDragEnd={(node) => handleDragEnd(shape.id, node)}
               onTransformEnd={(node) => handleTransformEnd(shape, node)}
               onDblClick={() => selectMode && openEditor(shape)}
+              onLinkClick={() => shape.link && panTo(shape.link)}
             />
           ))}
           {draft && <ShapeNode shape={draft} draggable={false} listening={false} />}
@@ -844,7 +883,7 @@ export function Canvas({
           key={editing.token}
           editing={editing}
           view={view}
-          color={editing.type === 'note' ? '#1f2937' : draw.stroke}
+          color={editing.type === 'text' ? draw.stroke : '#1f2937'}
           background={
             editing.type === 'note'
               ? draw.fill === 'transparent'
@@ -994,6 +1033,8 @@ function TextEditor({
         padding: pad * view.scale,
         fontSize: editing.fontSize * view.scale,
         lineHeight: isNote ? 1.35 : 1.3,
+        // Raw LaTeX reads best monospaced.
+        fontFamily: editing.type === 'math' ? 'ui-monospace, Consolas, monospace' : undefined,
         color,
         background,
       }}
@@ -1017,6 +1058,11 @@ function TextEditor({
 }
 
 // ---------------------------------------------------------------------------
+
+/** An arrow whose ends are pinned to two shapes (see resolveConnector). */
+function isAttached(shape: Shape): boolean {
+  return shape.type === 'arrow' && !!shape.from && !!shape.to;
+}
 
 /** World-space box -> absolutely-positioned screen rect for a DOM overlay. */
 function worldRectToScreen(box: Box, view: View): React.CSSProperties {
